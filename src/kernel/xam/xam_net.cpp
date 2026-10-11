@@ -42,6 +42,7 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <sys/socket.h>
+#include <cerrno>
 #endif
 
 namespace rex {
@@ -50,6 +51,75 @@ namespace xam {
 using namespace rex::system;
 using namespace rex::system::xam;
 
+namespace {
+// Report the last host socket error to the guest as a Winsock error code.
+// Titles check WSAGetLastError() for WSAEWOULDBLOCK on non-blocking sockets and
+// treat anything else (including 0) as fatal.
+void SetLastSocketError() {
+#if REX_PLATFORM_WIN32
+  XThread::SetLastError(WSAGetLastError());
+#else
+  uint32_t wsa;
+  switch (errno) {
+    case EAGAIN:
+#if EWOULDBLOCK != EAGAIN
+    case EWOULDBLOCK:
+#endif
+      wsa = 10035;  // WSAEWOULDBLOCK
+      break;
+    case EINPROGRESS:
+      wsa = 10036;
+      break;  // WSAEINPROGRESS
+    case EALREADY:
+      wsa = 10037;
+      break;  // WSAEALREADY
+    case ENOTSOCK:
+      wsa = 10038;
+      break;  // WSAENOTSOCK
+    case EMSGSIZE:
+      wsa = 10040;
+      break;  // WSAEMSGSIZE
+    case EADDRINUSE:
+      wsa = 10048;
+      break;  // WSAEADDRINUSE
+    case ENETUNREACH:
+      wsa = 10051;
+      break;  // WSAENETUNREACH
+    case ECONNABORTED:
+      wsa = 10053;
+      break;  // WSAECONNABORTED
+    case ECONNRESET:
+      wsa = 10054;
+      break;  // WSAECONNRESET
+    case ENOTCONN:
+      wsa = 10057;
+      break;  // WSAENOTCONN
+    case ETIMEDOUT:
+      wsa = 10060;
+      break;  // WSAETIMEDOUT
+    case ECONNREFUSED:
+      wsa = 10061;
+      break;  // WSAECONNREFUSED
+    case EHOSTUNREACH:
+      wsa = 10065;
+      break;  // WSAEHOSTUNREACH
+    case EINVAL:
+      wsa = 10022;
+      break;  // WSAEINVAL
+    case EFAULT:
+      wsa = 10014;
+      break;  // WSAEFAULT
+    case EINTR:
+      wsa = 10004;
+      break;  // WSAEINTR
+    default:
+      wsa = 10050;
+      break;  // WSAENETDOWN
+  }
+  XThread::SetLastError(wsa);
+#endif
+}
+}  // namespace
 // https://github.com/G91/TitanOffLine/blob/1e692d9bb9dfac386d08045ccdadf4ae3227bb5e/xkelib/xam/xamNet.h
 enum {
   XNCALLER_INVALID = 0x0,
@@ -620,12 +690,7 @@ i32 NetDll_shutdown_entry(u32 caller, u32 socket_handle, i32 how) {
 
   auto ret = socket->Shutdown(how);
   if (ret == -1) {
-#if REX_PLATFORM_WIN32
-    uint32_t error_code = WSAGetLastError();
-    XThread::SetLastError(error_code);
-#else
-    XThread::SetLastError(0x0);
-#endif
+    SetLastSocketError();
   }
   return ret;
 }
@@ -852,7 +917,11 @@ u32 NetDll_recv_entry(u32 caller, u32 socket_handle, mapped_void buf_ptr, u32 bu
     return -1;
   }
 
-  return socket->Recv(buf_ptr, buf_len, flags);
+  const int ret = socket->Recv(buf_ptr, buf_len, flags);
+  if (ret == -1) {
+    SetLastSocketError();
+  }
+  return ret;
 }
 
 u32 NetDll_recvfrom_entry(u32 caller, u32 socket_handle, mapped_void buf_ptr, u32 buf_len,
@@ -883,13 +952,7 @@ u32 NetDll_recvfrom_entry(u32 caller, u32 socket_handle, mapped_void buf_ptr, u3
   }
 
   if (ret == -1) {
-// TODO: Better way of getting the error code
-#if REX_PLATFORM_WIN32
-    uint32_t error_code = WSAGetLastError();
-    XThread::SetLastError(error_code);
-#else
-    XThread::SetLastError(0x0);
-#endif
+    SetLastSocketError();
   }
 
   return ret;
@@ -903,7 +966,11 @@ u32 NetDll_send_entry(u32 caller, u32 socket_handle, mapped_void buf_ptr, u32 bu
     return -1;
   }
 
-  return socket->Send(buf_ptr, buf_len, flags);
+  const int ret = socket->Send(buf_ptr, buf_len, flags);
+  if (ret == -1) {
+    SetLastSocketError();
+  }
+  return ret;
 }
 
 u32 NetDll_sendto_entry(u32 caller, u32 socket_handle, mapped_void buf_ptr, u32 buf_len, u32 flags,
@@ -916,7 +983,11 @@ u32 NetDll_sendto_entry(u32 caller, u32 socket_handle, mapped_void buf_ptr, u32 
   }
 
   N_XSOCKADDR_IN native_to(to_ptr);
-  return socket->SendTo(buf_ptr, buf_len, flags, &native_to, to_len);
+  const int ret = socket->SendTo(buf_ptr, buf_len, flags, &native_to, to_len);
+  if (ret == -1) {
+    SetLastSocketError();
+  }
+  return ret;
 }
 
 u32 NetDll___WSAFDIsSet_entry(u32 socket_handle, ppc_ptr_t<x_fd_set> fd_set) {
