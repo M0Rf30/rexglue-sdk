@@ -112,7 +112,16 @@ u32 XamInputGetState_entry(u32 user_index, u32 flags, ppc_ptr_t<X_INPUT_STATE> i
   }
 
   auto* is = input_system();
-  return is->GetState(actual_user_index, input_state);
+  const X_RESULT result = is->GetState(actual_user_index, input_state);
+  if (result == X_ERROR_SUCCESS && input_state && actual_user_index < 4) {
+    static uint16_t last_buttons[4] = {};
+    const uint16_t buttons = input_state->gamepad.buttons;
+    if (buttons != last_buttons[actual_user_index]) {
+      last_buttons[actual_user_index] = buttons;
+      REXKRNL_DEBUG("XamInputGetState(user={}): buttons={:04X}", actual_user_index, buttons);
+    }
+  }
+  return result;
 }
 
 // https://msdn.microsoft.com/en-us/library/windows/desktop/microsoft.directx_sdk.reference.xinputsetstate(v=vs.85).aspx

@@ -56,6 +56,8 @@ X_HRESULT xeXMsgStartIORequestEx(uint32_t app, uint32_t message, uint32_t overla
                                  XMSGSTARTIOREQUEST_UNKNOWNARG* unknown) {
   auto result = REX_KERNEL_STATE()->app_manager()->DispatchMessageAsync(app, message, buffer_ptr,
                                                                         buffer_length);
+  REXKRNL_DEBUG("XMsgStartIORequestEx(app={:08X}, msg={:08X}, buf={:08X}, len={}) -> {:08X}", app,
+                message, buffer_ptr, buffer_length, uint32_t(result));
   if (result == X_E_NOTFOUND) {
     REXKRNL_ERROR("XMsgStartIORequestEx: app {:08X} undefined", app);
     result = X_E_INVALIDARG;
