@@ -79,8 +79,16 @@ bool FunctionDispatcher::Execute(ThreadState* thread_state, uint32_t address) {
   uint64_t previous_lr = ctx->lr;
   ctx->lr = 0xBCBCBCBC;
 
+  // Host-owned threads (audio workers, GPU interrupt callbacks) reach guest code
+  // here without XThread::Execute seeding the cached csr; a zero cache makes the
+  // first flush/round-mode write unmask every host FP exception. MXCSR/FPCR is
+  // per host thread, so seed it and restore the host's mode afterwards.
+  const uint32_t host_csr = ctx->fpscr.getcsr();
+  ctx->fpscr.InitHost();
+
   fn(*ctx, memory_->virtual_membase());
 
+  ctx->fpscr.setcsr(host_csr);
   ctx->lr = previous_lr;
   ctx->r1.u64 += 64 + 112;
   ThreadState::Bind(previous_thread_state);
