@@ -55,6 +55,17 @@ bool SDLAudioDriver::Initialize() {
   desired_spec.format = SDL_AUDIO_F32LE;
   desired_spec.channels = frame_channels_;
   sdl_device_channels_ = frame_channels_;
+
+  // Ask for the endpoint's native layout *before* opening. Once a stream is open,
+  // backends such as PipeWire open the device at the stream's channel count, so a
+  // query afterwards reports 6 on a stereo sink; the stereo fold below is then
+  // skipped and the server's own 5.1->2 sum clips badly.
+  SDL_AudioSpec native_spec = {};
+  if (SDL_GetAudioDeviceFormat(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &native_spec, NULL) &&
+      native_spec.channels > 0 && native_spec.channels <= 2) {
+    desired_spec.channels = 2;
+    sdl_device_channels_ = 2;
+  }
   sdl_stream_ = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &desired_spec,
                                           SDLCallback, this);
   if (!sdl_stream_) {
@@ -75,7 +86,7 @@ bool SDLAudioDriver::Initialize() {
 
   // A 1-channel device gets the stereo fold too, then SDL collapses to mono.
   // Handing it a 6ch stream instead would use SDL's own downmix.
-  if (obtained_spec.channels <= 2) {
+  if (sdl_device_channels_ != 2 && obtained_spec.channels <= 2) {
     SDL_DestroyAudioStream(sdl_stream_);
     sdl_stream_ = nullptr;
     desired_spec.channels = 2;
