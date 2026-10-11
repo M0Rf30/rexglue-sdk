@@ -483,6 +483,11 @@ FileMappingHandle CreateFileMappingHandle(const std::filesystem::path& path, siz
     shm_unlink(full_path.c_str());
     return kFileMappingHandleInvalid;
   }
+  // Nothing reopens the mapping by name; drop the name now so the fd alone owns the
+  // memory. Otherwise any exit that skips CloseFileMappingHandle (crash, kill, _exit)
+  // leaks the multi-GB object in /dev/shm until reboot, and a full tmpfs then makes
+  // later runs die with SIGBUS on first guest-memory touch.
+  shm_unlink(full_path.c_str());
   return static_cast<FileMappingHandle>(ret);
 #endif
 }
